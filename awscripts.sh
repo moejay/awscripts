@@ -45,6 +45,10 @@ ACTION=
 SIZE=
 INSTANCE_ID=
 INSTANCE_IP=
+CREDENTIALS=""
+K= #The Access key 
+S= #The Access secret
+
 #------------------------------------------------------------------------------------
 # UTILITY FUNCTIONS
 #------------------------------------------------------------------------------------
@@ -87,6 +91,8 @@ REQUIRED OPTIONS:
 
 
 OTHER OPTIONS:
+    -K	       Access key ( required with -S )
+    -S	       Access secret ( required with -K )
     -v         Show debuging messages
     -h         Show this help message
     -V         Show version
@@ -96,7 +102,7 @@ USAGE
 # Get the script options
 get_options()
 {
-    while getopts "a:b:e:i:s:hvV-:" OPTION
+    while getopts "a:b:e:i:s:K:S:hvV-:" OPTION
     do
         if [ $OPTION == "-" ]; then
             OPTION=$OPTARG
@@ -106,6 +112,8 @@ get_options()
             s) SIZE=${OPTARG};;
             i) INSTANCE_ID=${OPTARG};;
             e) INSTANCE_IP=${OPTARG};;
+	    K) K=${OPTARG};;
+	    S) S=${OPTARG};;
             h)  usage && exit 0;;
        'help')  usage && exit 0;;
             V)  echo $VERSION && exit 0;;
@@ -128,10 +136,8 @@ start_instance()
 
         if [ ! -z "$eip" ]
         then
-                echo "Attaching ip $eip"
-                ec2-associate-address -i $instanceid $eip
-                echo "ip $eip attached to $instanceid"
-        fi
+       		attach_ip $eip $instanceid
+	fi
         echo "Instance started"
 
 }
@@ -142,6 +148,18 @@ stop_instance()
         instanceid=$INSTANCE_ID
         ec2-stop-instances $instanceid
         echo "Stopped"
+}
+#attach ip to instance id
+attach_ip()
+{
+	echo "Attaching ip $1 to instance $2"
+	ec2-associate-address -i $2 $1
+	if [ $? == 0 ]
+	then
+		echo "$2 : $1"
+	else
+		echo "Failed to attach ip"
+	fi
 }
 resize()
 {
@@ -186,15 +204,30 @@ resize()
 
 
 }
+check_credentials()
+{
+    if [ ! -z $K  && ! -z $S ] 
+    then
+	CREDENTIALS="-O $K -W $S"
+    fi
+		
+}
 
+get_status()
+{
+    ec2-describe-instances $CREDENTIALS $1
+}
 main()
 {
     get_options "$@"
+    check_credentials
     # Put the rest of iyour main script here
     case $ACTION in
         'resize')
-                resize
+                resize 
                 ;;
+	'status')
+		get_status $INSTANCE_ID
         'start')
                 start_instance
                 ;;
