@@ -188,7 +188,7 @@ resize()
         echo "new volume: $newvolumeid"
         echo "Attaching the new volume"
         ec2-attach-volume  $CREDENTIALS  --instance $instanceid   --device /dev/sda1   $newvolumeid
-        while ! ec2-describe-volumes $newvolumeid | grep -q attached; do sleep 1; done
+        while ! ec2-describe-volumes $CREDENTIALS $newvolumeid | grep -q attached; do sleep 1; done
 
         echo "Starting the instance with the resized volume"
         start_instance
