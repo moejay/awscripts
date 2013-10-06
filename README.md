@@ -17,7 +17,7 @@ A script that will easily perform different common scenarios on aws instance usi
 
 <h2>Examples : </h2>
 <ul>
-<li> resize instance to and  `./awscripts.sh -a resize -s 40 -i i-12345 ` </li>
+<li> resize instance to 40 gb   `./awscripts.sh -a resize -s 40 -i i-12345 ` </li>
 <li> Change instance type and attach ip  `./awsciprts.sh -a retype -t t1.micro -i i-12345 -e 123.123.123.123` </li>
 <li> Start with ip attached `./awscripts.sh -a start -i i-12345 -e 123.123.123.123` </li>
 
