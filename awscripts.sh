@@ -38,14 +38,15 @@ SCRIPT_NAME=`basename $0`
 # If debug information should be shown
 VERBOSE=
 
-VERSION=0.1
+VERSION=0.1.1
 
 # Add your own global variables here
 ACTION=
 SIZE=
 INSTANCE_ID=
 INSTANCE_IP=
-CREDENTIALS=""
+CREDENTIALS=
+NEWTYPE=
 K= #The Access key 
 S= #The Access secret
 
@@ -84,11 +85,11 @@ usage: $0 [-v] [-h] -a action -i instance_id [ -- args ... ]
 Short description
 
 REQUIRED OPTIONS:
-    -a action      change_instance_size
-    -i instance id
+    -a action    (  resize , retype, stop, start )
+    -i instance id 
     -e elsatic ip (You must have this ip allocated )
     -s   size in gb (eg:: 20)
-
+    -t type (used in retype)
 
 OTHER OPTIONS:
     -K	       Access key ( required with -S )
@@ -102,7 +103,7 @@ USAGE
 # Get the script options
 get_options()
 {
-    while getopts "a:b:e:i:s:K:S:hvV-:" OPTION
+    while getopts "a:b:e:i:t:s:K:S:hvV-:" OPTION
     do
         if [ $OPTION == "-" ]; then
             OPTION=$OPTARG
@@ -112,6 +113,7 @@ get_options()
             s) SIZE=${OPTARG};;
             i) INSTANCE_ID=${OPTARG};;
             e) INSTANCE_IP=${OPTARG};;
+	    t) NEWTYPE=${OPTARG};;
 	    K) K=${OPTARG};;
 	    S) S=${OPTARG};;
             h)  usage && exit 0;;
@@ -130,9 +132,9 @@ start_instance()
         instanceid=$INSTANCE_ID
         eip=$INSTANCE_IP
 
-        ec2-start-instances $instanceid
-        while ! ec2-describe-instances $instanceid | grep -q running; do sleep 1; done
-        ec2-describe-instances $instanceid
+        ec2-start-instances  $CREDENTIALS $instanceid
+        while ! ec2-describe-instances $CREDENTIALS $instanceid | grep -q running; do sleep 1; done
+        ec2-describe-instances  $CREDENTIALS $instanceid
 
         if [ ! -z "$eip" ]
         then
@@ -146,14 +148,14 @@ stop_instance()
 {
         echo "Stopping instance"
         instanceid=$INSTANCE_ID
-        ec2-stop-instances $instanceid
+        ec2-stop-instances  $CREDENTIALS $instanceid
         echo "Stopped"
 }
 #attach ip to instance id
 attach_ip()
 {
 	echo "Attaching ip $1 to instance $2"
-	ec2-associate-address -i $2 $1
+	ec2-associate-address  $CREDENTIALS -i $2 $1
 	if [ $? == 0 ]
 	then
 		echo "$2 : $1"
@@ -166,26 +168,26 @@ resize()
         instanceid=$INSTANCE_ID
         size=$SIZE
         echo "Getting old volume id "
-        oldvolumeid=$(ec2-describe-instances $instanceid |
+        oldvolumeid=$(ec2-describe-instances $CREDENTIALS $instanceid |
                   egrep "^BLOCKDEVICE./dev/sda1" | cut -f3)
-                zone=$(ec2-describe-instances $instanceid | egrep ^INSTANCE | cut -f12)
+                zone=$(ec2-describe-instances $CREDENTIALS $instanceid | egrep ^INSTANCE | cut -f12)
         echo "instance $instanceid in $zone with original volume $oldvolumeid"
 
         echo "Stopping instance"
         stop_instance
         echo "Instance stoped,detaching volume "
-        while ! ec2-detach-volume $oldvolumeid; do sleep 1; done
+        while ! ec2-detach-volume  $CREDENTIALS $oldvolumeid; do sleep 1; done
         echo "volume detached"
         echo "Creating snapshot "
-        snapshotid=$(ec2-create-snapshot $oldvolumeid | cut -f2)
-        while ec2-describe-snapshots $snapshotid | grep -q pending; do sleep 1; done
+        snapshotid=$(ec2-create-snapshot  $CREDENTIALS $oldvolumeid | cut -f2)
+        while ec2-describe-snapshots  $CREDENTIALS $snapshotid | grep -q pending; do sleep 1; done
         echo "snapshot: $snapshotid"
         echo "Creating new volume from $snapshotid"
-        newvolumeid=$(ec2-create-volume   --availability-zone $zone   --size $size   --snapshot $snapshotid |
+        newvolumeid=$(ec2-create-volume  $CREDENTIALS  --availability-zone $zone   --size $size   --snapshot $snapshotid |
   cut -f2)
         echo "new volume: $newvolumeid"
         echo "Attaching the new volume"
-        ec2-attach-volume   --instance $instanceid   --device /dev/sda1   $newvolumeid
+        ec2-attach-volume  $CREDENTIALS  --instance $instanceid   --device /dev/sda1   $newvolumeid
         while ! ec2-describe-volumes $newvolumeid | grep -q attached; do sleep 1; done
 
         echo "Starting the instance with the resized volume"
@@ -204,10 +206,24 @@ resize()
 
 
 }
+retype()
+{
+	stop_instance
+	change_type  $INSTANCE_ID $NEWTYPE
+	start_instance
+}	
+change_type()
+{
+	echo "Modifying instance type to $2"
+	while ! ec2-modify-instance-attribute $CREDENTIALS --instance-type $2  $1; do sleep 1; done
+	echo  "Instance $1 is now $2 "
+}
 check_credentials()
 {
-    if [ ! -z $K  && ! -z $S ] 
+    if [  -z "$K" -o  -z "$S" ] 
     then
+	echo "Using global credentials"
+    else
 	CREDENTIALS="-O $K -W $S"
     fi
 		
@@ -226,8 +242,12 @@ main()
         'resize')
                 resize 
                 ;;
+	'retype')
+		retype
+		;;
 	'status')
 		get_status $INSTANCE_ID
+		;;
         'start')
                 start_instance
                 ;;
